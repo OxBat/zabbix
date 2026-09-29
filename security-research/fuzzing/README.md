@@ -33,6 +33,7 @@ clang -g -O1 -fsanitize=address,fuzzer -I include -I include/common -I. \
 | `fuzz_csv_to_json.c` | `item_preproc_csv_to_json` | "CSV to JSON" preprocessing on item values from a monitored target |
 | `fuzz_xml_to_json.c` | `zbx_xml_to_json`          | "XML to JSON" preprocessing on item values from a monitored target |
 | `fuzz_snmp_walk.c`   | `item_preproc_snmp_walk_to_json` | "SNMP walk to JSON" preprocessing on values from a monitored SNMP target |
+| `fuzz_lld_macro.c`   | `lld_extract_entries` + `zbx_substitute_lld_macros` | LLD discovery JSON from a monitored target: `{#MACRO}` names/values → substitution into prototype templates |
 
 The preprocessing targets link a stand-alone ASan build of the relevant
 `src/libs/zbxpreproc/*.c` (that library is not built by the
@@ -82,10 +83,22 @@ made the code advance the parse cursor by 2 assuming CRLF, overshooting the NUL
 terminator by one byte. The fix only advances by 2 when a `\n` actually follows.
 After the fix the same harness runs 3.9M executions clean.
 
-`fuzz_xml_to_json.c` (~3.2M executions) and `fuzz_snmp_walk.c` (~6.4M+
+`fuzz_xml_to_json.c` (~3.2M executions) and `fuzz_snmp_walk.c` (~15M+
 executions) found no memory-safety issue — the libxml2 tree-walk and the
 hand-rolled SNMP walk parser held up. The SNMP hex/utf-8 conversion
 (`snmp_hex_to_utf8`) over-allocates (`size` bytes for `size/2` decoded bytes plus
 the terminator), so it is safe even on all-spaces / empty input.
+
+`fuzz_lld_macro.c` drives the full LLD path (discovery JSON → macro extraction →
+substitution into 10 template forms across all 9 escaping variants). Several
+million ASan executions found no memory-safety issue: the substitution
+primitives (`process_lld_macro_token`, `zbx_replace_mem_dyn`,
+`zbx_replace_string`, `zbx_substitute_function_lld_param`) are all dynamically
+allocated and correctly sized, and macro values are `strdup`'d from JSON (fully
+initialized, no uninitialized-memory disclosure). Build it by compiling
+`src/zabbix_server/lld/{lld_entry,lld_macro}.c` and
+`src/libs/zbxserialize/serialize.c` stand-alone (ASan) plus small no-op stubs for
+the DB and `lld_entry_ptr`-vector symbols pulled in but never executed by the
+harness (entries_sorted is NULL, `zbx_lld_macro_paths_get` is never called).
 
 These harnesses are kept for reproducibility and future extended campaigns.
