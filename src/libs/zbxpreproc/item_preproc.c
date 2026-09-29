@@ -1472,7 +1472,7 @@ int	item_preproc_csv_to_json(zbx_variant_t *value, const char *params, char **er
 			if ('\0' == *field)
 				data = field;
 			else if ('\r' == *field)
-				data = field + 2;
+				data = ('\n' == field[1]) ? field + 2 : field + 1;
 			else
 				data = field + 1;
 		}
